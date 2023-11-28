@@ -1,27 +1,26 @@
 package lambda;
 
+import java.io.File;
+
 /**
  *
  * @author Wes Lloyd
  */
 public class Request {
 
-    String name;
+    String fileName;
 
-    public String getName() {
-        return name;
-    }
-    
-    public String getNameALLCAPS() {
-        return name.toUpperCase();
+    public String getFileName() {
+        return fileName;
     }
 
-    public void setName(String name) {
-        this.name = name;
+
+    public void setName(String fileName) {
+        this.fileName = fileName;
     }
 
-    public Request(String name) {
-        this.name = name;
+    public Request(String fileName) {
+        this.fileName = fileName;
     }
 
     public Request() {
