@@ -1,17 +1,26 @@
 package lambda;
 
 import com.amazonaws.services.lambda.runtime.*;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.S3Object;
+
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import saaf.Inspector;
 
 import javax.sql.DataSource;
+
+import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
 
@@ -27,7 +36,8 @@ public class DataService implements RequestHandler<Request, HashMap<String, Obje
         LambdaLogger logger = context.getLogger();
         Inspector inspector = new Inspector();
         inspector.inspectAll();
-        Response r = new Response();
+
+        String csvData = readCsvFromS3(request.getS3Bucket(), request.getS3Key());
 
 
         try
@@ -40,7 +50,6 @@ public class DataService implements RequestHandler<Request, HashMap<String, Obje
             String password = properties.getProperty("password");
             String driver = properties.getProperty("driver");
 
-            r.setValue(request.getFileName());
 
             Connection con = DriverManager.getConnection(url, username, password);
 
@@ -125,7 +134,7 @@ public class DataService implements RequestHandler<Request, HashMap<String, Obje
         //Print log information to the Lambda log as needed
         //logger.log("log message...");
 
-        inspector.consumeResponse(r);
+
 
         //****************END FUNCTION IMPLEMENTATION***************************
 
@@ -214,8 +223,11 @@ public class DataService implements RequestHandler<Request, HashMap<String, Obje
             }
         };
 
+
+
+
         // Create an instance of the class
-        HelloMySQL lt = new HelloMySQL();
+        DataService lt = new DataService();
 
         // Create a request object
         Request req = new Request();
@@ -227,7 +239,7 @@ public class DataService implements RequestHandler<Request, HashMap<String, Obje
         req.setName(name);
 
         // Report name to stdout
-        System.out.println("cmd-line param name=" + req.getName());
+        System.out.println("cmd-line param name=" + req.getFileName());
 
         // Test properties file creation
         Properties properties = new Properties();
@@ -252,4 +264,23 @@ public class DataService implements RequestHandler<Request, HashMap<String, Obje
         // Print out function result
         System.out.println("function result:" + resp.toString());
     }
+
+
+    private String readCsvFromS3(String bucket, String key) {
+        AmazonS3 s3Client = AmazonS3ClientBuilder.standard().build();
+        try (S3Object s3Object = s3Client.getObject(new GetObjectRequest(bucket, key));
+             BufferedReader reader = new BufferedReader(new InputStreamReader(s3Object.getObjectContent(), StandardCharsets.UTF_8))) {
+            
+            StringBuilder csvData = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                csvData.append(line).append("\n");
+            }
+            return csvData.toString();
+        } catch (IOException e) {
+            // Handle exceptions
+            throw new RuntimeException("Error reading CSV from S3", e);
+        }
+    }
+
 }
