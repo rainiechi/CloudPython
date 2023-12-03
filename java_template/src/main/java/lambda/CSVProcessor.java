@@ -1,9 +1,8 @@
 package lambda;
 
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.FilterOutputStream;
-import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,9 +11,15 @@ import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
 
+import saaf.Inspector;
+
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+import java.util.Base64;
+import java.util.Map;
 
 /*
 Example Service #1 transformations (can implement others):
@@ -28,54 +33,71 @@ Example Service #1 transformations (can implement others):
  4. Remove duplicate data identified by [Order ID]. Any record having a duplicate [Order ID] that has already been processed will be ignored.
  */
 
-public class CSVProcessor
-{
+public class CSVProcessor implements RequestHandler<Map<String, Object>, String> {
 
-    public static void main(String[] args) throws IOException
-    {
-        String inputCsvFile = "100 Sales Records.csv";
-        String outputCsvFile = "output.csv";
+    @Override
+    public String handleRequest(Map<String, Object> event, Context context) {
+        try {
+            String base64Csv = (String) event.get("body");
+            byte[] decodedBytes = Base64.getDecoder().decode(base64Csv);
+            String csvContent = new String(decodedBytes);
 
-        List<List<String>> recordsList = new ArrayList<>();
+            List<List<String>> recordsList = new ArrayList<>();
 
-        // Read the CSV file and store the records in a list
-        try (CSVParser parser = new CSVParser(new FileReader(inputCsvFile), CSVFormat.DEFAULT.withFirstRecordAsHeader()))
-        {
-            recordsList.add(new ArrayList<>(parser.getHeaderNames()));  // Add header first
+            // Parse the decoded CSV content
+            try (CSVParser parser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(new StringReader(csvContent))) {
+                recordsList.add(new ArrayList<>(parser.getHeaderNames())); // Add header first
 
-            for (CSVRecord record : parser)
-            {
-                List<String> newRecord = new ArrayList<>();
-                record.forEach(newRecord::add);
-                recordsList.add(newRecord);
+                for (CSVRecord record : parser) {
+                    List<String> newRecord = new ArrayList<>();
+                    record.forEach(newRecord::add);
+                    recordsList.add(newRecord);
+                }
             }
-        }
 
-        transformOrderPriority(recordsList);
-        addOrderProcessingTime(recordsList);
-        addGrossMargin(recordsList);
-        removeDuplicateData(recordsList);
+            transformOrderPriority(recordsList);
+            addOrderProcessingTime(recordsList);
+            addGrossMargin(recordsList);
+            removeDuplicateData(recordsList);
 
-
-        // Write the transformed data to the output CSV file
-        try (CSVPrinter printer = new CSVPrinter(new FileWriter(outputCsvFile), CSVFormat.DEFAULT))
-        {
-            for (List<String> record : recordsList)
-            {
-                printer.printRecord(record);
+            // Write the transformed data to a StringWriter
+            StringWriter writer = new StringWriter();
+            try (CSVPrinter printer = new CSVPrinter(writer, CSVFormat.DEFAULT)) {
+                for (List<String> record : recordsList) {
+                    printer.printRecord(record);
+                }
             }
+
+            // // Optionally convert the StringWriter to InputStream if needed
+            // InputStream inputStream = IOUtils.toInputStream(writer.toString(),
+            // StandardCharsets.UTF_8);
+
+            // Create an instance of Inspector (or modify the s3Push method to directly
+            // accept InputStream)
+            Inspector inspector = new Inspector();
+
+            inspector.addAttribute("CSVContent", csvContent);
+
+
+            // Upload to S3 (assuming Helpers.s3Push can handle InputStream)
+            String bucketName = "<your-s3-bucket-name>";
+            Helpers.s3Push(inspector, bucketName);
+
+            return "CSV file processed and uploaded successfully";
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "Error processing CSV file: " + e.getMessage();
         }
     }
 
-    private static void addOrderProcessingTime(List<List<String>> recordsList)
-    {
+    private static void addOrderProcessingTime(List<List<String>> recordsList) {
         recordsList.get(0).add("Processing Time");
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("M/d/yyyy");
 
         // Skip the header row
-        for (int i = 1; i < recordsList.size(); i++)
-        {
+        for (int i = 1; i < recordsList.size(); i++) {
             List<String> record = recordsList.get(i);
 
             LocalDate orderDate = LocalDate.parse(record.get(5), formatter);
@@ -86,16 +108,13 @@ public class CSVProcessor
         }
     }
 
-    private static void transformOrderPriority(List<List<String>> recordsList)
-    {
+    private static void transformOrderPriority(List<List<String>> recordsList) {
         // Skip the header row
-        for (int i = 1; i < recordsList.size(); i++)
-        {
+        for (int i = 1; i < recordsList.size(); i++) {
             List<String> record = recordsList.get(i);
             String orderPriority = record.get(4);
 
-            switch (orderPriority)
-            {
+            switch (orderPriority) {
                 case "L":
                     orderPriority = "Low";
                     break;
@@ -113,15 +132,13 @@ public class CSVProcessor
         }
     }
 
-
-    // Add a [Gross Margin] column. The Gross Margin Column is a percentage calculated using the formula: [Total Profit] /  [Total Revenue].
+    // Add a [Gross Margin] column. The Gross Margin Column is a percentage
+    // calculated using the formula: [Total Profit] / [Total Revenue].
     // It is stored as a floating point value (e.g 0.25 for 25% profit).
-    private static void addGrossMargin(List<List<String>> recordsList)
-    {
+    private static void addGrossMargin(List<List<String>> recordsList) {
         recordsList.get(0).add("Gross Margin");
         // Skip the header row
-        for (int i = 1; i < recordsList.size(); i++)
-        {
+        for (int i = 1; i < recordsList.size(); i++) {
             List<String> record = recordsList.get(i);
 
             float totalProfit = Float.parseFloat(record.get(13));
@@ -132,24 +149,18 @@ public class CSVProcessor
         }
     }
 
-
-    // Remove duplicate data identified by [Order ID]. Any record having a duplicate [Order ID] that has already been processed will be ignored.
-    private static void removeDuplicateData(List<List<String>> recordsList)
-    {
+    // Remove duplicate data identified by [Order ID]. Any record having a duplicate
+    // [Order ID] that has already been processed will be ignored.
+    private static void removeDuplicateData(List<List<String>> recordsList) {
         ArrayList<String> processedOrderIds = new ArrayList<>();
 
-
         // Skip the header row
-        for (int i = 1; i < recordsList.size(); i++)
-        {
+        for (int i = 1; i < recordsList.size(); i++) {
             List<String> record = recordsList.get(i);
             String orderId = record.get(0);
-            if(processedOrderIds.contains(orderId))
-            {
+            if (processedOrderIds.contains(orderId)) {
                 recordsList.remove(i);
-            }
-            else
-            {
+            } else {
                 processedOrderIds.add(orderId);
             }
         }
