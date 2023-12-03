@@ -23,7 +23,7 @@
 
 
 csv_file_path="/home/vboxuser/CourseProject/CourseProject/100 Sales Records.csv"
-api_gateway_url="your-api-gateway-url"
+api_gateway_url="https://vxawyzuez0.execute-api.us-east-2.amazonaws.com/CSVProcessor"
 
 # Encode the CSV file to Base64
 encoded_csv=$(base64 "$csv_file_path")

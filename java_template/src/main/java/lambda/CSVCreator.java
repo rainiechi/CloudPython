@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.lang.System.Logger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +23,6 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
 import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
@@ -37,7 +37,6 @@ import com.amazonaws.services.s3.model.S3Object;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Scanner;
 
 /*
 Example Service #1 transformations (can implement others):
@@ -51,10 +50,9 @@ Example Service #1 transformations (can implement others):
  4. Remove duplicate data identified by [Order ID]. Any record having a duplicate [Order ID] that has already been processed will be ignored.
  */
 
-public class CSVProcessor implements RequestHandler<Request, HashMap<String, Object>> {
+public class CSVCreator implements RequestHandler<Request, HashMap<String, Object>> {
 
     public HashMap<String, Object> handleRequest(Request request, Context context) {
-
 
         String filename = request.getFileName();
         Inspector inspector = new Inspector();
@@ -62,34 +60,25 @@ public class CSVProcessor implements RequestHandler<Request, HashMap<String, Obj
         String srcBucket = "test.bucket.462562f23.bm";
         String srcKey = "test.csv";
 
+        Logger logger = System.getLogger("CSVProcessor");
 
-        AmazonS3 s3Client = AmazonS3ClientBuilder.standard().build();
-        S3Object s3Object = s3Client.getObject(new GetObjectRequest(
-                srcBucket, srcKey));
-        InputStream objectData = s3Object.getObjectContent();
-
-        
         try {
 
-            Scanner scanner = new Scanner(objectData);
-
             // // Read CSV data from S3
+            String csvData = readCsvFromS3(request.getS3Bucket(), request.getS3Key());
+
             List<List<String>> recordsList = new ArrayList<>();
 
-            while (scanner.hasNextLine()) {
-                String line = scanner.nextLine();
-                String[] values = line.split(",");
-                List<String> record = new ArrayList<>();
-                for (String value : values) {
-                    record.add(value);
-                }
-                recordsList.add(record);
-            }
+            // Parse the decoded CSV content
+            try (CSVParser parser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(new StringReader(csvContent))) {
+                recordsList.add(new ArrayList<>(parser.getHeaderNames())); // Add header first
 
-            transformOrderPriority(recordsList);
-            addOrderProcessingTime(recordsList);
-            addGrossMargin(recordsList);
-            removeDuplicateData(recordsList);
+                for (CSVRecord record : parser) {
+                    List<String> newRecord = new ArrayList<>();
+                    record.forEach(newRecord::add);
+                    recordsList.add(newRecord);
+                }
+            }
 
             // Write the transformed data to a StringWriter
             StringWriter writer = new StringWriter();
@@ -99,25 +88,45 @@ public class CSVProcessor implements RequestHandler<Request, HashMap<String, Obj
                 }
             }
 
-            scanner.close();
-        LambdaLogger logger = context.getLogger();
-        logger.log("ProcessCSV bucketname:" + srcBucket + " filename:" + srcKey + "\n");
-            
+            // // Optionally convert the StringWriter to InputStream if needed
+            byte[] bytes = writer.toString().getBytes(StandardCharsets.UTF_8);
+            InputStream is = new ByteArrayInputStream(bytes);
+            ObjectMetadata meta = new ObjectMetadata();
+            meta.setContentLength(bytes.length);
+            meta.setContentType("text/plain"); // Create new file on S3
+            AmazonS3 s3Client = AmazonS3ClientBuilder.standard().build();
+            s3Client.putObject(srcBucket, filename, is, meta);
+            Response response = new Response();
+            System.out.println("Succesfully uploaded file to S3");
+            response.setValue("Bucket:" + srcBucket + " filename:" + filename + " size:" + bytes.length);
 
-        Response response = new Response();
-        response.setValue("Bucket:" + srcBucket + " filename:" + filename);
-
-        inspector.consumeResponse(response);
-        return inspector.finish();
-
+            return inspector.finish();
 
         } catch (Exception e) {
             e.printStackTrace();
+            System.out.println("Error uploading file to S3");
             return inspector.finish();
+
         }
     }
 
+    private String readCsvFromS3(String bucket, String key) {
+        AmazonS3 s3Client = AmazonS3ClientBuilder.standard().build();
+        try (S3Object s3Object = s3Client.getObject(new GetObjectRequest(bucket, key));
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(s3Object.getObjectContent(), StandardCharsets.UTF_8))) {
 
+            StringBuilder csvData = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                csvData.append(line).append("\n");
+            }
+            return csvData.toString();
+        } catch (IOException e) {
+            // Handle exceptions
+            throw new RuntimeException("Error reading CSV from S3", e);
+        }
+    }
 
     private static void addOrderProcessingTime(List<List<String>> recordsList) {
         recordsList.get(0).add("Processing Time");
