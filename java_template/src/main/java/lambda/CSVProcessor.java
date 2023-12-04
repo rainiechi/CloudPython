@@ -4,17 +4,17 @@ import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.StringReader;
+
+
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
+
 import org.apache.commons.csv.CSVPrinter;
-import org.apache.commons.csv.CSVRecord;
+
 
 import saaf.Inspector;
 
@@ -54,21 +54,17 @@ Example Service #1 transformations (can implement others):
 public class CSVProcessor implements RequestHandler<Request, HashMap<String, Object>> {
 
     public HashMap<String, Object> handleRequest(Request request, Context context) {
-
-
-        String filename = request.getFileName();
+        String filename = "transformed.csv";
         Inspector inspector = new Inspector();
 
         String srcBucket = "test.bucket.462562f23.bm";
-        String srcKey = "test.csv";
-
+        String srcKey = "data.csv";
 
         AmazonS3 s3Client = AmazonS3ClientBuilder.standard().build();
         S3Object s3Object = s3Client.getObject(new GetObjectRequest(
                 srcBucket, srcKey));
         InputStream objectData = s3Object.getObjectContent();
 
-        
         try {
 
             Scanner scanner = new Scanner(objectData);
@@ -100,24 +96,39 @@ public class CSVProcessor implements RequestHandler<Request, HashMap<String, Obj
             }
 
             scanner.close();
-        LambdaLogger logger = context.getLogger();
-        logger.log("ProcessCSV bucketname:" + srcBucket + " filename:" + srcKey + "\n");
-            
+            LambdaLogger logger = context.getLogger();
+            logger.log("ProcessCSV bucketname:" + srcBucket + " filename:" + srcKey + "\n");
 
-        Response response = new Response();
-        response.setValue("Bucket:" + srcBucket + " filename:" + filename);
+            try {
 
-        inspector.consumeResponse(response);
-        return inspector.finish();
+                byte[] bytes = writer.toString().getBytes(StandardCharsets.UTF_8);
+                InputStream is = new ByteArrayInputStream(bytes);
+                ObjectMetadata meta = new ObjectMetadata();
+                meta.setContentLength(bytes.length);
+                meta.setContentType("text/plain"); // Create new file on S3
 
+                s3Client.putObject(srcBucket, filename, is, meta);
+                System.out.println("Succesfully uploaded transformed file to S3");
 
-        } catch (Exception e) {
+                          Response response = new Response();
+            response.setValue("Bucket:" + srcBucket + " filename:" + filename);
+
+            inspector.consumeResponse(response);
+                return inspector.finish();
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.out.println("Error uploading file to S3");
+                return inspector.finish();
+            }
+        }
+        catch (Exception e) {
             e.printStackTrace();
+            System.out.println("Error reading CSV from S3");
             return inspector.finish();
         }
+
     }
-
-
 
     private static void addOrderProcessingTime(List<List<String>> recordsList) {
         recordsList.get(0).add("Processing Time");
