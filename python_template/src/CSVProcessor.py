@@ -57,35 +57,34 @@ class CSVProcessor:
         for index in sorted(indexes_to_remove, reverse=True):
             del records_list[index]
 
-    def handle_request(self, src_bucket, src_key):
+
+def handle_request(event, lambda_context):
+    try:
+        # Extract values from the event (event is the input to the Lambda function)
+        src_bucket = event['src_bucket']
+        src_key = event['src_key']
         filename = "transformed.csv"
         s3 = boto3.client('s3')
 
-        try:
-            response = s3.get_object(Bucket=src_bucket, Key=src_key)
-            object_data = response['Body'].read().decode('utf-8')
-            records_list = list(csv.reader(io.StringIO(object_data)))
+        response = s3.get_object(Bucket=src_bucket, Key=src_key)
+        object_data = response['Body'].read().decode('utf-8')
+        records_list = list(csv.reader(io.StringIO(object_data)))
 
-            self.transform_order_priority(records_list)
-            self.add_order_processing_time(records_list)
-            self.add_gross_margin(records_list)
-            self.remove_duplicate_data(records_list)
+        CSVProcessor.transform_order_priority(records_list)
+        CSVProcessor.add_order_processing_time(records_list)
+        CSVProcessor.add_gross_margin(records_list)
+        CSVProcessor.remove_duplicate_data(records_list)
 
-            # Write the transformed data to a new CSV file
-            transformed_data = io.StringIO()
-            csv.writer(transformed_data).writerows(records_list)
+        # Write the transformed data to a new CSV file
+        transformed_data = io.StringIO()
+        csv.writer(transformed_data).writerows(records_list)
 
-            # Upload the transformed data to S3
-            s3.put_object(Body=transformed_data.getvalue(), Bucket=src_bucket, Key=filename)
-            print("Successfully uploaded transformed file to S3")
+        # Upload the transformed data to S3
+        s3.put_object(Body=transformed_data.getvalue(), Bucket=src_bucket, Key=filename)
+        print("Successfully uploaded transformed file to S3")
 
-            return {"Bucket": src_bucket, "Filename": filename}
+        return {"Bucket": src_bucket, "Filename": filename}
 
-        except NoCredentialsError:
-            print("Credentials not available")
-            return {}
-
-if __name__ == "__main__":
-    processor = CSVProcessor()
-    result = processor.handle_request("test.bucket.462562f23.bm", "data.csv")
-    print(result)
+    except NoCredentialsError:
+        print("Credentials not available")
+        return {}
