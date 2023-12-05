@@ -3,6 +3,7 @@ import io
 import datetime
 import boto3
 import uuid
+import Inspector
 from botocore.exceptions import NoCredentialsError
 
 class CSVProcessor:
@@ -31,6 +32,10 @@ class CSVProcessor:
             elif order_priority == "C":
                 record[4] = "Critical"
 
+
+    # Add a [Gross Margin] column. The Gross Margin Column is a percentage
+    # calculated using the formula: [Total Profit] / [Total Revenue].
+    # It is stored as a floating point value (e.g 0.25 for 25% profit).
     @staticmethod
     def add_gross_margin(records_list):
         records_list[0].append("Gross Margin")
@@ -41,21 +46,27 @@ class CSVProcessor:
             gross_margin = total_profit / total_revenue
             record.append(str(gross_margin))
 
+
+    # Remove duplicate data identified by [Order ID]. Any record having a duplicate
+    # [Order ID] that has already been processed will be ignored.
     @staticmethod
     def remove_duplicate_data(records_list):
         processed_order_ids = set()
-        indexes_to_remove = []
+        index_to_remove = []
 
-        for i, record in enumerate(records_list[1:]):
-            order_id = record[0]
+        # Skip the header row
+        for i in range(1, len(records_list)):
+            record = records_list[i]
+            order_id = record[6]
 
             if order_id in processed_order_ids:
-                indexes_to_remove.append(i + 1)  # Adjust index to account for header row
+                index_to_remove.append(i)
             else:
                 processed_order_ids.add(order_id)
 
-        for index in sorted(indexes_to_remove, reverse=True):
-            del records_list[index]
+        # Remove duplicate rows
+        for index in reversed(index_to_remove):
+            records_list.pop(index)
 
 
 def handle_request(event, lambda_context):
@@ -74,6 +85,7 @@ def handle_request(event, lambda_context):
         CSVProcessor.add_order_processing_time(records_list)
         CSVProcessor.add_gross_margin(records_list)
         CSVProcessor.remove_duplicate_data(records_list)
+
 
         # Write the transformed data to a new CSV file
         transformed_data = io.StringIO()
