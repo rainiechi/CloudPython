@@ -13,13 +13,6 @@ import java.util.List;
  * @author wlloyd
  */
 public class Response extends saaf.Response {
-    
-    //
-    // User Defined Attributes
-    //
-    //
-    // ADD getters and setters for custom attributes here.
-    //
 
     // Return value
     private String value;

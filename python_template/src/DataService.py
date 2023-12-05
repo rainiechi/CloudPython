@@ -2,34 +2,34 @@ import csv
 import io
 import os
 import boto3
+import logging
+
 import mysql.connector
 from botocore.exceptions import NoCredentialsError
 from Inspector import Inspector
 
-class DataService:
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-    CONTAINER_ID = "/tmp/container-id"
-    CHARSET = "US-ASCII"
 
-    @staticmethod
-    def handle_request(request, context):
+def handle_request(request, context):
         inspector = Inspector()
-        logger = context.getLogger()
+
         
         # Create logger
-        logger.log("Adding table to database")
-        logger.log(f"request: bucket: {request['s3Bucket']} key: {request['s3Key']}")
+        logger.info("Adding table to database")
+        logger.info(f"request: bucket: {request['s3Bucket']} key: {request['s3Key']}")
 
         # setCurrentDirectory("/tmp")
-        logger.log("reading file from s3")
+        logger.info("reading file from s3")
 
         s3_client = boto3.client('s3')
         try:
             s3_object = s3_client.get_object(Bucket=request['s3Bucket'], Key=request['s3Key'])
-            logger.log("successfully read csv file from s3")
+  
             object_data = s3_object['Body'].read()
 
-            logger.log("Data now in input stream")
+            logger.info("Data now in input stream")
 
             try:
                 csv_data = object_data.decode("utf-8")
@@ -42,7 +42,7 @@ class DataService:
                     database='python-sales-data-instance-1'
                 )
 
-                logger.log("Connection established successfully")
+                logger.info("Connection established successfully")
                 cursor = conn.cursor()
 
                 # Drop table if exists
@@ -70,10 +70,10 @@ class DataService:
                     );
                 """)
 
-                logger.log("Table created successfully")
+                logger.info("Table created successfully")
                 records_list = []
 
-                logger.log("Adding data from CSV file to database")
+                logger.info("Adding data from CSV file to database")
                 # Read the CSV file and store the records in a list
                 csv_reader = csv.reader(io.StringIO(csv_data))
                 header = next(csv_reader)
@@ -86,27 +86,26 @@ class DataService:
                     """, csv_reader)
 
                 except mysql.connector.Error as e:
-                    logger.log("Got an exception working with MySQL! ")
-                    logger.log(e.msg)
+                    logger.info("Got an exception working with MySQL! ")
+                    logger.info(e.msg)
                     raise
 
                 conn.commit()
                 conn.close()
 
             except Exception as e:
-                logger.log("Got an exception working with MySQL! ")
-                logger.log(str(e))
+                logger.info("Got an exception working with MySQL! ")
+                logger.info(str(e))
 
         except NoCredentialsError:
-            logger.log("Credentials not available")
+            logger.info("Credentials not available")
         inspector.inspectAllDeltas()
         return inspector.finish()
 
 if __name__ == "__main__":
     # Replace with your actual request and context objects
     sample_request = {'s3Bucket': 'your_bucket', 's3Key': 'your_key'}
-    sample_context = None
+    sample_context = None  # You would need to mock or create a context object for local testing.
 
-    # Instantiate the class and call the handle_request method
-    data_service = DataService()
-    data_service.handle_request(sample_request, sample_context)
+    # Call the handle_request function directly for testing
+    print(handle_request(sample_request, sample_context))

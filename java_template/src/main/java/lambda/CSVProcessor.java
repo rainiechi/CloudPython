@@ -52,7 +52,9 @@ public class CSVProcessor implements RequestHandler<Request, HashMap<String, Obj
     public HashMap<String, Object> handleRequest(Request request, Context context) {
         String filename = "transformed.csv";
         Inspector inspector = new Inspector();
-        // inspector.inspectAll();
+      
+
+
 
         String srcBucket = "test.bucket.462562f23.bm";
         String srcKey = "data.csv";
@@ -112,7 +114,8 @@ public class CSVProcessor implements RequestHandler<Request, HashMap<String, Obj
                           Response response = new Response();
             response.setValue("Bucket:" + srcBucket + " filename:" + filename);
 
-            // inspector.consumeResponse(response);
+            inspector.consumeResponse(response);
+            inspector.inspectAllDeltas();
                 return inspector.finish();
 
             } catch (Exception e) {
