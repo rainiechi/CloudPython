@@ -34,14 +34,6 @@ class DataService:
             try:
                 csv_data = object_data.decode("utf-8")
                 
-                # Replace properties file with actual database connection details
-                # properties = {'host': 'your_database_host', 'user': 'your_username', 'password': 'your_password', 'database': 'your_database_name'}
-                # Replace the following four lines with your actual database connection details
-                # host = properties['host']
-                # user = properties['user']
-                # password = properties['password']
-                # database = properties['database']
-                
                 # Establish a database connection
                 conn = mysql.connector.connect(
                     host='18.220.158.6',
